@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+
+import argparse
+import subprocess
+
+player= "ffplay -hide_banner -loglevel warning "
+
+def play(saal, what, option, player):
+    if what == 'stream':
+        print("starting stream . . . . ")
+        if option == 1:
+            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 1 -ast 2".format(player=player, saal=saal), shell=True)
+        elif option == 2:
+            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_sd.m3u8 -vst 1 -ast 2".format(player=player, saal=saal), shell=True)
+        elif option == 3:
+            subprocess.call("{player} https://cdn.c3voc.de/s{saal}_native_hd.webm".format(player=player, saal=saal), shell=True)
+        elif option == 4:
+            subprocess.call("{player} https://cdn.c3voc.de/s{saal}_native_sd.webm".format(player=player, saal=saal), shell=True)
+        elif option == 5:
+            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 5 -ast 6".format(player=player, saal=saal),shell=True)
+    elif what == 'recording':
+        print('starting recording preview . . . .')
+        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:12000".format(player=player, saal=saal),shell=True)
+    elif what == 'cam':
+        print("starting cam{} preview . . . .".format(option))
+        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1400{cam}".format(player=player, saal=saal, cam=option),shell=True)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--saal", '-s', 
+            dest='saal',
+            default=1, 
+            type=int, 
+            help="saal to select", 
+            required=True)
+    parser.add_argument("--type", '-t', 
+            dest='what',
+            default='cam', 
+            choices=['cam', 'recording', 'stream'], 
+            help="what to play", 
+            required=True)
+    parser.add_argument("--option", '-o', 
+            dest='option',
+            default=1, 
+            type=int,
+            choices=range(6), 
+            help="which cam (1 to 5) or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides) to play")
+            
+    flags = parser.parse_args()
+
+    play(flags.saal, flags.what, flags.option, player)
+
+if __name__ == "__main__":
+    main()
