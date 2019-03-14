@@ -26,7 +26,7 @@ def play(saal, what, option, player):
         subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1400{cam}".format(player=player, saal=saal, cam=option),shell=True)
     elif what == 'loudness':
         print("starting loudnessmonitor . . . ")
-        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:12000 -filter_complex "[0:a:0] ebur128=video=1:meter=18:size=hd480 [iv][a],[0:v]scale=hd480[scaled], [scaled]pad=iw:ih*2[int],[int][iv]overlay=0:H/2[vid]" -map "[vid]" -map "[a]" -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal), shell=True)
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:12000 -filter_complex "[0:a:0] ebur128=video=1:meter=16:target=-16:size=hd480 [iv][a],[0:v]scale=hd480[scaled], [scaled]pad=iw:ih*2[int],[int][iv]overlay=0:H/2[vid]" -map "[vid]" -map "[a]" -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal), shell=True)
 
 def main():
     parser = argparse.ArgumentParser()
