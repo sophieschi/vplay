@@ -5,6 +5,11 @@ import subprocess
 
 player= "ffplay -hide_banner -loglevel warning "
 
+audio_streams = list()
+audio_streams.append(['native', [0,1]]) # stereo
+audio_streams.append(['translated', [2,2]]) # mono
+audio_streams.append(['translated_2', [3,3]]) # mono
+
 def play(saal, what, option, player):
     if what == 'stream':
         print("starting stream . . . . ")
@@ -20,13 +25,44 @@ def play(saal, what, option, player):
             subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 4 -ast 5".format(player=player, saal=saal),shell=True)
     elif what == 'recording':
         print('starting recording preview . . . .')
-        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:12000".format(player=player, saal=saal),shell=True)
+        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:11100".format(player=player, saal=saal),shell=True)
     elif what == 'cam':
         print("starting cam{} preview . . . .".format(option))
-        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1400{cam}".format(player=player, saal=saal, cam=option),shell=True)
+        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1310{cam}".format(player=player, saal=saal, cam=option),shell=True)
     elif what == 'loudness':
-        print("starting loudnessmonitor . . . ")
-        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:12000 -filter_complex "[0:a:0] ebur128=video=1:meter=16:target=-16:size=hd480 [iv][a],[0:v]scale=hd480[scaled], [scaled]pad=iw:ih*2[int],[int][iv]overlay=0:H/2[vid]" -map "[vid]" -map "[a]" -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal), shell=True)
+        print("starting loudnessmonitor, playing '{}' audio . . . ".format(audio_streams[option][0]))
+        audio_name = ""
+
+        # scale original video and create ebur128 graphs
+        ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
+        for idx, s_meta in enumerate(audio_streams):
+            name = s_meta[0]
+            channels = s_meta[1]
+
+            # select two chanels from original 8 channel audio, render ebur128 and print audio name to output
+            ffmpeg_filter_str += "[0:a:0] pan='stereo|c0=c{ch0}|c1=c{ch1}' [a_{name}]; ".format(name=name, ch0=channels[0], ch1=channels[0])
+            ffmpeg_filter_str += "[a_{name}] ebur128=video=1:meter=16:target=-16:size=hd480 [v_{name}][a_{name}];".format(name=name)
+            ffmpeg_filter_str += "[v_{name}] drawtext=text='{name}':fontcolor=white:fontsize=24:x=(w-tw)/2:y=h-40 [vt_{name}];".format(name=name)
+
+            # discard all but the selected audio stream
+            if idx != option:
+                ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
+            else:
+                audio_name = "a_{name}".format(name=name)
+
+        
+        # assemble output layout (original video + audio stream graphs)
+        ffmpeg_filter_str += "[v_video]"
+        for s_meta in audio_streams:
+            name = s_meta[0]
+            ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
+        ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(num_audio=len(audio_streams)+1)
+
+        # finally call ffmpeg and view with mpv
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:11100 \
+-filter_complex "{filter}" \
+-map "[combined]" -map "[{audio}]" \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal, filter=ffmpeg_filter_str, audio=audio_name), shell=True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -47,8 +83,8 @@ def main():
             default=1, 
             type=int,
             choices=range(6), 
-            help="which cam (1 to 5) or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides) to play")
-            
+            help="which cam (1 to 5) or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides) or audio source (0=native, 1=translated 1, 2=translated 2) to play")
+
     flags = parser.parse_args()
 
     play(flags.saal, flags.what, flags.option, player)
