@@ -3,46 +3,59 @@
 import argparse
 import subprocess
 
-player = "ffplay -hide_banner -loglevel warning "
+PLAYER = "ffplay -hide_banner -loglevel warning"
 
+# mapping of "surround sound" audio channels to audio streams
 audio_streams = list()
 audio_streams.append(['native', [0, 1]])  # stereo
 audio_streams.append(['translated', [2, 2]])  # mono
 audio_streams.append(['translated_2', [3, 3]])  # mono
 
+# mapping of transcoded streams
+transcoded_streams = dict()
+transcoded_streams['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -vst 0 -ast 1"
+transcoded_streams['hls-sd'] = "https://cdn.c3voc.de/hls/{slug}_native_sd.m3u8 -vst 0 -ast 1"
+transcoded_streams['webm-hd'] = "https://cdn.c3voc.de/{slug}_native_hd.webm"
+transcoded_streams['webm-sd'] = "https://cdn.c3voc.de/{slug}_native_sd.webm"
+transcoded_streams['slides'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -vst 4 -ast 5"
 
-def play(saal, what, option, player):
-    if what == 'stream':
-        print("starting stream . . . . ")
-        if option == 1:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 0 -ast 1".format(
-                player=player, saal=saal), shell=True)
-        elif option == 2:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_sd.m3u8 -vst 0 -ast 1".format(
-                player=player, saal=saal), shell=True)
-        elif option == 3:
-            subprocess.call(
-                "{player} https://cdn.c3voc.de/s{saal}_native_hd.webm".format(player=player, saal=saal), shell=True)
-        elif option == 4:
-            subprocess.call(
-                "{player} https://cdn.c3voc.de/s{saal}_native_sd.webm".format(player=player, saal=saal), shell=True)
-        elif option == 5:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 4 -ast 5".format(
-                player=player, saal=saal), shell=True)
-    elif what == 'recording':
-        print('starting recording preview . . . .')
+
+def play_cam(args):
+    """
+    Play the camera preview feed from voctomix
+
+    Arguments:
+    - args.saal             Encoder number
+    - args.cam_no           Camera number
+    """
+
+    print("starting cam{} preview...".format(args.cam_no))
+    subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1310{cam}".format(
+        player=PLAYER, saal=args.saal, cam=args.cam_no), shell=True)
+
+
+def play_mix(args):
+    """
+    Play the mix preview feed from voctomix
+
+    Arguments:
+    - args.saal             Encoder number
+    - args.loudness         Enable loudness monitor
+        - args.track        Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting mix preview...')
         subprocess.call(
-            "{player} tcp://encoder{saal}.lan.c3voc.de:11100".format(player=player, saal=saal), shell=True)
-    elif what == 'cam':
-        print("starting cam{} preview . . . .".format(option))
-        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1310{cam}".format(
-            player=player, saal=saal, cam=option), shell=True)
-    elif what == 'loudness':
-        print("starting loudnessmonitor, playing '{}' audio . . . ".format(
-            audio_streams[option][0]))
-        audio_name = ""
+            "{player} tcp://encoder{saal}.lan.c3voc.de:11100".format(
+                player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting mix preview, playing '{}' audio...".format(audio_streams[args.track][0]))
 
         # scale original video and create ebur128 graphs
+        audio_name = ""
         ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
         for idx, s_meta in enumerate(audio_streams):
             name = s_meta[0]
@@ -57,7 +70,7 @@ def play(saal, what, option, player):
                 name=name)
 
             # discard all but the selected audio stream
-            if idx != option:
+            if idx != args.track:
                 ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
             else:
                 audio_name = "a_{name}".format(name=name)
@@ -74,33 +87,66 @@ def play(saal, what, option, player):
         subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:11100 \
 -filter_complex "{filter}" \
 -map "[combined]" -map "[{audio}]" \
--c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal, filter=ffmpeg_filter_str, audio=audio_name), shell=True)
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=args.saal, filter=ffmpeg_filter_str, audio=audio_name), shell=True)
+
+
+def play_stream(args):
+    """
+    Play the mix preview feed from voctomix
+
+    Arguments:
+    - args.saal             Encoder number or custom slug
+    - args.type             Transcoded type (dict key of transcoded_streams)
+    """
+
+    # convert saal number or custom slug
+    streamslug = ""
+    if args.saal.isnumeric():
+        streamslug = "s{}".format(args.saal)
+    else:
+        streamslug = args.saal
+
+    # play stream
+    print("starting '{}' stream of {}...".format(args.type, streamslug))
+    url_options = transcoded_streams[args.type].format(slug=streamslug)
+    subprocess.call("{player} {url}".format(player=PLAYER, url=url_options), shell=True)
 
 
 def main():
+    # top level arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--saal", '-s',
-                        dest='saal',
+    parser.add_argument("--saal", '-s', dest='saal',
                         default=1,
-                        type=int,
-                        help="saal to select",
+                        help="saal number to select OR custom slug",
                         required=True)
-    parser.add_argument("--type", '-t',
-                        dest='what',
-                        default='cam',
-                        choices=['cam', 'recording', 'stream', 'loudness'],
-                        help="what to play",
-                        required=True)
-    parser.add_argument("--option", '-o',
-                        dest='option',
-                        default=1,
-                        type=int,
-                        choices=range(6),
-                        help="which cam (1 to 5) or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides) or audio source (0=native, 1=translated 1, 2=translated 2) to play")
+    subparsers = parser.add_subparsers(
+        help='what to play. Show command help with $command -h')
 
-    flags = parser.parse_args()
+    # create the parser for the "cam" command
+    parser_cam = subparsers.add_parser('cam', help='show a camera feed')
+    parser_cam.add_argument('cam_no', type=int,
+                            help='camera number')
+    parser_cam.set_defaults(func=play_cam)
 
-    play(flags.saal, flags.what, flags.option, player)
+    # create the parser for the "mix" command
+    parser_mix = subparsers.add_parser('mix', help='show the mix preview')
+    parser_mix.add_argument('--loudness', '-l', action='store_true', default=False,
+                            help='show loudness graph')
+    parser_mix.add_argument('--track', '-t', type=int,
+                            choices=range(len(audio_streams)), default=0,
+                            help='audio stream to play')
+    parser_mix.set_defaults(func=play_mix)
+
+    # create the parser for the "stream" command
+    transcoding_types = transcoded_streams.keys()
+    parser_stream = subparsers.add_parser('stream', help='show a selected stream transcoding')
+    parser_stream.add_argument('type', choices=transcoding_types,
+                               help='stream type')
+    parser_stream.set_defaults(func=play_stream)
+
+    # parse
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
