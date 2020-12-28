@@ -1,12 +1,12 @@
 ./vplay -h
-usage: vplay [-h] --saal SAAL --type {cam,recording,stream}
-             [--option {0,1,2,3,4,5}]
+usage: vplay [-h] --saal SAAL --type {cam,recording,stream,loudness} [--option {0,1,2,3,4,5}]
 
 optional arguments:
   -h, --help            show this help message and exit
   --saal SAAL, -s SAAL  saal to select
-  --type {cam,recording,stream}, -t {cam,recording,stream}
+  --type {cam,recording,stream,loudness}, -t {cam,recording,stream,loudness}
                         what to play
   --option {0,1,2,3,4,5}, -o {0,1,2,3,4,5}
-                        which cam (1 to 5) or stream (1=hls hd, 2=hls sd,
-                        3=webm hd, 4=webm sd, 5 slides) to play
+                        which cam (1 to 5)
+                        or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides)
+                        or audio source (0=native, 1=translated 1, 2=translated 2) to play
