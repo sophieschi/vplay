@@ -11,6 +11,22 @@ AUDIO_STREAM_MAPPING.append(['native', [0, 1]])  # stereo
 AUDIO_STREAM_MAPPING.append(['translated', [2, 2]])  # mono
 AUDIO_STREAM_MAPPING.append(['translated_2', [3, 3]])  # mono
 
+# mapping of available audio tracks (ffmpeg stream_specifier) in transcoded streams
+# A) just native audio
+# STREAM_AUDIO_TRACKS = list()
+# STREAM_AUDIO_TRACKS.append(['native', "0:a"])  # when no translation is present
+
+# B) one translation
+STREAM_AUDIO_TRACKS = list()
+STREAM_AUDIO_TRACKS.append(['native', "0:a:1"])  # native is always last!
+STREAM_AUDIO_TRACKS.append(['translated', "0:a:0"])  # translation1 is first
+
+# C) two translations
+# STREAM_AUDIO_TRACKS = list()
+# STREAM_AUDIO_TRACKS.append(['native', "0:a:2"])  # native is always last!
+# STREAM_AUDIO_TRACKS.append(['translated', "0:a:0"])  # translation1 is first
+# STREAM_AUDIO_TRACKS.append(['translated_2', "0:a:1"])  # translation2 in the middle
+
 # mapping of transcoded streams
 TRANSCODED_STREAMS = dict()
 TRANSCODED_STREAMS['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -ast 1"
@@ -59,6 +75,51 @@ def ffmpeg_ebur128_filter_mix(audio_mapping, audio_track) -> str:
         ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
     ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(
         num_audio=len(audio_mapping)+1)
+
+    # assemble ffmpeg --filter_complex and output mapping string
+    ffmpeg_filter_and_map_str = """-filter_complex "{filter}" \
+-map "[combined]" -map "[{audio}]" """.format(filter=ffmpeg_filter_str, audio=audio_name)
+
+    return ffmpeg_filter_and_map_str
+
+
+def ffmpeg_ebur128_filter_stream(audio_tracks, audio_track) -> str:
+    """
+    Build ffmpeg filter for loudness monitor
+    for inputs with separate audio tracks in one container
+
+    Arguments:
+    - audio_tracks          Names of audio tracks
+    - audio_track           Audio track to listen to
+
+    Returns ffmpeg filter (-filter_complex) and output mapping (-map) string
+    """
+    # scale original video and create ebur128 graphs
+    audio_name = ""
+    ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
+    for idx, s_meta in enumerate(audio_tracks):
+        name = s_meta[0]
+        stream_specifier = s_meta[1]
+
+        # select an audio track, render ebur128 and print audio name to output
+        ffmpeg_filter_str += "[{s_id}] ebur128=video=1:meter=16:target=-16:size=hd480 [v_{name}][a_{name}];".format(
+            s_id=stream_specifier, name=name)
+        ffmpeg_filter_str += "[v_{name}] drawtext=text='{name}':fontcolor=white:fontsize=24:x=(w-tw)/2:y=h-40 [vt_{name}];".format(
+            name=name)
+
+        # discard all but the selected audio stream
+        if idx != audio_track:
+            ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
+        else:
+            audio_name = "a_{name}".format(name=name)
+
+    # assemble output layout (original video + audio stream graphs)
+    ffmpeg_filter_str += "[v_video]"
+    for s_meta in audio_tracks:
+        name = s_meta[0]
+        ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
+    ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(
+        num_audio=len(audio_tracks)+1)
 
     # assemble ffmpeg --filter_complex and output mapping string
     ffmpeg_filter_and_map_str = """-filter_complex "{filter}" \
@@ -122,6 +183,8 @@ def play_stream(args):
     Arguments:
     - args.saal             Encoder number or custom slug
     - args.type             Transcoded type (dict key of TRANSCODED_STREAMS)
+    - args.loudness         Enable loudness monitor
+        - args.track        Audio track to play
     """
 
     # convert saal number or custom slug
@@ -132,10 +195,26 @@ def play_stream(args):
         streamslug = args.saal
 
     stream_url_options = TRANSCODED_STREAMS[args.type].format(slug=streamslug)
+    stream_url = stream_url_options.split()[0]  # url without options (until first whitespace)
 
-    # play stream
-    print("starting '{}' stream of {}...".format(args.type, streamslug))
-    subprocess.call("{player} {url}".format(player=PLAYER, url=stream_url_options), shell=True)
+    if not args.loudness:
+        # play stream
+        print("starting '{}' stream of {}...".format(args.type, streamslug))
+        subprocess.call("{player} {url}".format(player=PLAYER, url=stream_url_options), shell=True)
+
+    else:
+        print("starting '{}' stream of {}, playing '{}' audio...".format(
+            args.type, streamslug, AUDIO_STREAM_MAPPING[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(STREAM_AUDIO_TRACKS, args.track)
+
+        # finally call ffmpeg and view with mpv
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | mpv -""".format(input_url=stream_url, filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
 
 
 def main():
@@ -168,6 +247,11 @@ def main():
     parser_stream = subparsers.add_parser('stream', help='show a selected stream transcoding')
     parser_stream.add_argument('type', choices=transcoding_types,
                                help='stream type')
+    parser_stream.add_argument('--loudness', '-l', action='store_true', default=False,
+                               help='show loudness graph')
+    parser_stream.add_argument('--track', '-t', type=int,
+                               choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
+                               help='audio stream to play')
     parser_stream.set_defaults(func=play_stream)
 
     # parse

@@ -16,9 +16,10 @@ There are three basic commands with the hall ID as common parameter:
         * Positional argument: Camera Number
     - `mix [-l [-t $track_no] ]`: Play the voctomix mix preview
         * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
-    - `stream {hls-hd, hls-sd, webm-hd, webm-sd, slides}`: Play the transcoded stream from the CDN
+    - `stream {hls-hd, hls-sd, webm-hd, webm-sd, slides} [-l [-t $track_no] ]`: Play the transcoded stream from the CDN
         * Positional argument: Transcoding type (hls, webm, slides)
         * The hall ID (`-s`) can also be an arbitrary slug in this command
+        * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
 
 Python's help output is split.
 `./vplay -h` shows the available commands and `./vplay $command -h` shows the help for the individual command.
