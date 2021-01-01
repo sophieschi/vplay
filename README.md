@@ -20,6 +20,9 @@ There are three basic commands with the hall ID as common parameter:
         * Positional argument: Transcoding type (hls, webm, slides)
         * The hall ID (`-s`) can also be an arbitrary slug in this command
         * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
+    - `rtmp [-l [-t $track_no] ]`: Play RTMP stream (same audio channel config as mix)
+        * The hall ID (`-s`) must be the domain and path
+        * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
 
 Python's help output is split.
 `./vplay -h` shows the available commands and `./vplay $command -h` shows the help for the individual command.

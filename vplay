@@ -176,6 +176,39 @@ def play_mix(args):
                         shell=True)
 
 
+def play_rtmp(args):
+    """
+    Play a RTMP stream
+
+    Arguments:
+    - args.saal             RTMP URL (without scheme)
+    - args.loudness         Enable loudness monitor
+        - args.track        Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting RTMP stream...')
+        subprocess.call(
+            "{player} rtmp://{saal}".format(player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting RTMP stream, playing '{}' audio...".format(
+            AUDIO_STREAM_MAPPING[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(AUDIO_STREAM_MAPPING, args.track)
+
+        # finally call ffmpeg and view with mpv
+        input_url = "rtmp://{saal}".format(saal=args.saal)
+
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | mpv -""".format(input_url=input_url, filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
+
 def play_stream(args):
     """
     Play the mix preview feed from voctomix
@@ -253,6 +286,15 @@ def main():
                                choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
                                help='audio stream to play')
     parser_stream.set_defaults(func=play_stream)
+
+    # create the parser for the "rtmp" command
+    parser_rtmp = subparsers.add_parser('rtmp', help='show an RTMP stream')
+    parser_rtmp.add_argument('--loudness', '-l', action='store_true', default=False,
+                             help='show loudness graph')
+    parser_rtmp.add_argument('--track', '-t', type=int,
+                             choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
+                             help='audio stream to play')
+    parser_rtmp.set_defaults(func=play_rtmp)
 
     # parse
     args = parser.parse_args()
