@@ -3,8 +3,8 @@
 import argparse
 import subprocess
 
-PLAYER = "ffplay -hide_banner -loglevel warning"
-PLAYER_MPV = "mpv"
+PLAYER = "ffplay -volume 40 -hide_banner -loglevel warning"
+PLAYER_MPV = "mpv --volume=50"
 
 # mapping of "surround sound" audio channels to audio streams
 AUDIO_STREAM_MAPPING = list()
