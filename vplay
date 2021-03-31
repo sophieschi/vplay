@@ -30,11 +30,11 @@ STREAM_AUDIO_TRACKS.append(['translated', "0:a:0"])  # translation1 is first
 
 # mapping of transcoded streams
 TRANSCODED_STREAMS = dict()
-TRANSCODED_STREAMS['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -ast 1"
-TRANSCODED_STREAMS['hls-sd'] = "https://cdn.c3voc.de/hls/{slug}_native_sd.m3u8 -ast 1"
+TRANSCODED_STREAMS['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8"
+TRANSCODED_STREAMS['hls-sd'] = "https://cdn.c3voc.de/hls/{slug}_native_sd.m3u8"
 TRANSCODED_STREAMS['webm-hd'] = "https://cdn.c3voc.de/{slug}_native_hd.webm"
 TRANSCODED_STREAMS['webm-sd'] = "https://cdn.c3voc.de/{slug}_native_sd.webm"
-TRANSCODED_STREAMS['slides'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -vst 4 -ast 5"
+TRANSCODED_STREAMS['slides'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -vst v:1"
 
 
 def ffmpeg_ebur128_filter_mix(audio_mapping, audio_track) -> str:
@@ -237,8 +237,12 @@ def play_stream(args):
 
     if not args.loudness:
         # play stream
-        print("starting '{}' stream of {}...".format(args.type, streamslug))
-        subprocess.call("{player} {url}".format(player=PLAYER, url=stream_url_options), shell=True)
+        print("starting '{}' stream of {}, playing '{}' audio...".format(
+            args.type, streamslug, STREAM_AUDIO_TRACKS[args.track][0]))
+        subprocess.call("{player} {url} -ast {audio_track}".format(player=PLAYER,
+                                                                   url=stream_url_options,
+                                                                   audio_track=STREAM_AUDIO_TRACKS[args.track][1][2:]),
+                        shell=True)
 
     else:
         print("starting '{}' stream of {}, playing '{}' audio...".format(
