@@ -246,7 +246,7 @@ def play_stream(args):
 
     else:
         print("starting '{}' stream of {}, playing '{}' audio...".format(
-            args.type, streamslug, AUDIO_STREAM_MAPPING[args.track][0]))
+            args.type, streamslug, STREAM_AUDIO_TRACKS[args.track][0]))
 
         # get ffmpeg filter for video + loudness graphs
         ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(STREAM_AUDIO_TRACKS, args.track)
@@ -294,7 +294,7 @@ def main():
     parser_stream.add_argument('--loudness', '-l', action='store_true', default=False,
                                help='show loudness graph')
     parser_stream.add_argument('--track', '-t', type=int,
-                               choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
+                               choices=range(len(STREAM_AUDIO_TRACKS)), default=0,
                                help='audio stream to play')
     parser_stream.set_defaults(func=play_stream)
 
