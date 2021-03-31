@@ -4,6 +4,7 @@ import argparse
 import subprocess
 
 PLAYER = "ffplay -hide_banner -loglevel warning"
+PLAYER_MPV = "mpv"
 
 # mapping of "surround sound" audio channels to audio streams
 AUDIO_STREAM_MAPPING = list()
@@ -172,7 +173,9 @@ def play_mix(args):
         subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
 {filter_and_map} \
 -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
--f matroska - | mpv -""".format(input_url=input_url, filter_and_map=ffmpeg_filter_and_map_str),
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
                         shell=True)
 
 
@@ -205,7 +208,9 @@ def play_rtmp(args):
         subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
 {filter_and_map} \
 -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
--f matroska - | mpv -""".format(input_url=input_url, filter_and_map=ffmpeg_filter_and_map_str),
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
                         shell=True)
 
 
@@ -246,7 +251,9 @@ def play_stream(args):
         subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
 {filter_and_map} \
 -c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
--f matroska - | mpv -""".format(input_url=stream_url, filter_and_map=ffmpeg_filter_and_map_str),
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=stream_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
                         shell=True)
 
 
