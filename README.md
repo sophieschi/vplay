@@ -1,17 +1,21 @@
 # C3VOC A/V Technician Helper
 Python script to make the life an A/V technician at c3voc easier.
-It can play individual outputs of voctomix, as well as the final transcoded streams from the VOC CDN.
+It can play:
+
+- individual outputs of voctomix
+- RTMP streams (with custom audio track mapping)
+- the final transcoded streams from the VOC CDN/ streaming website.
 
 Keep in mind, that this tool uses assumptions about the VOC network and might not simply work in other situations.
 
 
 ## Requirements
-Python 3, ffmpeg with ffplay and mpv to play the loudness monitor.
+Python 3, ffmpeg (with ffplay) and mpv.
 
 
 ## Usage
 There are three basic commands with the hall ID as common parameter:
-- `./vplay -s $hall $command` with commands:
+- `./vplay -s $hall [-a $num_audio_tracks] $command` with commands:
     - `cam $cam_no`: Play a camera preview from voctomix
         * Positional argument: Camera Number
     - `mix [-l [-t $track_no] ]`: Play the voctomix mix preview

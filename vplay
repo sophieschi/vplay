@@ -2,31 +2,40 @@
 
 import argparse
 import subprocess
+import sys
 
 PLAYER = "ffplay -volume 40 -hide_banner -loglevel warning"
 PLAYER_MPV = "mpv --volume=50"
 
 # mapping of "surround sound" audio channels to audio streams
-AUDIO_STREAM_MAPPING = list()
-AUDIO_STREAM_MAPPING.append(['native', [0, 1]])  # stereo
-AUDIO_STREAM_MAPPING.append(['translated', [2, 2]])  # mono
-AUDIO_STREAM_MAPPING.append(['translated_2', [3, 3]])  # mono
+RTMP_AUDIO_MAPPING_MAX = 3  # maximum number or audio channels for RMTP and MIX
+
+RTMP_AUDIO_MAPPING_1 = list()
+RTMP_AUDIO_MAPPING_1.append(['native', (0, 1)])  # stereo
+
+RTMP_AUDIO_MAPPING_2 = RTMP_AUDIO_MAPPING_1.copy()
+RTMP_AUDIO_MAPPING_2.append(['translated', (2, 2)])  # mono
+
+RTMP_AUDIO_MAPPING_3 = RTMP_AUDIO_MAPPING_2.copy()
+RTMP_AUDIO_MAPPING_3.append(['translated_2', (3, 3)])  # mono
 
 # mapping of available audio tracks (ffmpeg stream_specifier) in transcoded streams
+STREAM_AUDIO_TRACKS_MAX = 3  # maximum number or audio channels for STREAM
+
 # A) just native audio
-# STREAM_AUDIO_TRACKS = list()
-# STREAM_AUDIO_TRACKS.append(['native', "0:a"])  # when no translation is present
+STREAM_AUDIO_TRACKS_1 = list()
+STREAM_AUDIO_TRACKS_1.append(['native', "0:a"])  # when no translation is present
 
 # B) one translation
-STREAM_AUDIO_TRACKS = list()
-STREAM_AUDIO_TRACKS.append(['native', "0:a:1"])  # native is always last!
-STREAM_AUDIO_TRACKS.append(['translated', "0:a:0"])  # translation1 is first
+STREAM_AUDIO_TRACKS_2 = list()
+STREAM_AUDIO_TRACKS_2.append(['native', "0:a:1"])  # native is always last!
+STREAM_AUDIO_TRACKS_2.append(['translated', "0:a:0"])  # translation1 is first
 
 # C) two translations
-# STREAM_AUDIO_TRACKS = list()
-# STREAM_AUDIO_TRACKS.append(['native', "0:a:2"])  # native is always last!
-# STREAM_AUDIO_TRACKS.append(['translated', "0:a:0"])  # translation1 is first
-# STREAM_AUDIO_TRACKS.append(['translated_2', "0:a:1"])  # translation2 in the middle
+STREAM_AUDIO_TRACKS_3 = list()
+STREAM_AUDIO_TRACKS_3.append(['native', "0:a:2"])  # native is always last!
+STREAM_AUDIO_TRACKS_3.append(['translated', "0:a:0"])  # translation1 is first
+STREAM_AUDIO_TRACKS_3.append(['translated_2', "0:a:1"])  # translation2 in the middle
 
 # mapping of transcoded streams
 TRANSCODED_STREAMS = dict()
@@ -43,7 +52,8 @@ def ffmpeg_ebur128_filter_mix(audio_mapping, audio_track) -> str:
     for inputs with multiple audio tracks in one 7.1 source
 
     Arguments:
-    - audio_mapping         Mapping of 7.1 audio channels to tracks
+    - audio_mapping         List of audio tracks/ 7.1 channel mapping
+                            with audio track name and 7.1 channel number pair (2-tuple) each
     - audio_track           Audio track to listen to
 
     Returns ffmpeg filter (-filter_complex) and output mapping (-map) string
@@ -90,7 +100,8 @@ def ffmpeg_ebur128_filter_stream(audio_tracks, audio_track) -> str:
     for inputs with separate audio tracks in one container
 
     Arguments:
-    - audio_tracks          Names of audio tracks
+    - audio_tracks          List of stream audio tracks
+                            with audio track name and ffmpeg stream specifier each
     - audio_track           Audio track to listen to
 
     Returns ffmpeg filter (-filter_complex) and output mapping (-map) string
@@ -148,9 +159,11 @@ def play_mix(args):
     Play the mix preview feed from voctomix
 
     Arguments:
-    - args.saal             Encoder number
-    - args.loudness         Enable loudness monitor
-        - args.track        Audio track to play
+    - args.saal                 Encoder number
+    - args.rtmp_audio_mapping   List of audio tracks/ 7.1 channel mapping
+                                with audio track name and 7.1 channel number pair (2-tuple) each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
     """
 
     if not args.loudness:
@@ -162,10 +175,10 @@ def play_mix(args):
 
     else:
         print("starting mix preview, playing '{}' audio...".format(
-            AUDIO_STREAM_MAPPING[args.track][0]))
+            args.rtmp_audio_mapping[args.track][0]))
 
         # get ffmpeg filter for video + loudness graphs
-        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(AUDIO_STREAM_MAPPING, args.track)
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(args.rtmp_audio_mapping, args.track)
 
         # finally call ffmpeg and view with mpv
         input_url = "tcp://encoder{saal}.lan.c3voc.de:11100".format(saal=args.saal)
@@ -184,9 +197,11 @@ def play_rtmp(args):
     Play a RTMP stream
 
     Arguments:
-    - args.saal             RTMP URL (without scheme)
-    - args.loudness         Enable loudness monitor
-        - args.track        Audio track to play
+    - args.saal                 RTMP URL (without scheme)
+    - args.rtmp_audio_mapping   List of audio tracks/ 7.1 channel mapping
+                                with audio track name and 7.1 channel number pair (2-tuple) each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
     """
 
     if not args.loudness:
@@ -197,10 +212,10 @@ def play_rtmp(args):
 
     else:
         print("starting RTMP stream, playing '{}' audio...".format(
-            AUDIO_STREAM_MAPPING[args.track][0]))
+            args.rtmp_audio_mapping[args.track][0]))
 
         # get ffmpeg filter for video + loudness graphs
-        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(AUDIO_STREAM_MAPPING, args.track)
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(args.rtmp_audio_mapping, args.track)
 
         # finally call ffmpeg and view with mpv
         input_url = "rtmp://{saal}".format(saal=args.saal)
@@ -219,10 +234,11 @@ def play_stream(args):
     Play the mix preview feed from voctomix
 
     Arguments:
-    - args.saal             Encoder number or custom slug
-    - args.type             Transcoded type (dict key of TRANSCODED_STREAMS)
-    - args.loudness         Enable loudness monitor
-        - args.track        Audio track to play
+    - args.saal                 Encoder number or custom slug
+    - args.stream_audio_tracks  List of stream audio tracks
+                                with audio track name and ffmpeg stream specifier each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
     """
 
     # convert saal number or custom slug
@@ -238,18 +254,19 @@ def play_stream(args):
     if not args.loudness:
         # play stream
         print("starting '{}' stream of {}, playing '{}' audio...".format(
-            args.type, streamslug, STREAM_AUDIO_TRACKS[args.track][0]))
+            args.type, streamslug, args.stream_audio_tracks[args.track][0]))
         subprocess.call("{player} {url} -ast {audio_track}".format(player=PLAYER,
                                                                    url=stream_url_options,
-                                                                   audio_track=STREAM_AUDIO_TRACKS[args.track][1][2:]),
+                                                                   audio_track=args.stream_audio_tracks[args.track][1][2:]),
                         shell=True)
 
     else:
         print("starting '{}' stream of {}, playing '{}' audio...".format(
-            args.type, streamslug, STREAM_AUDIO_TRACKS[args.track][0]))
+            args.type, streamslug, args.stream_audio_tracks[args.track][0]))
 
         # get ffmpeg filter for video + loudness graphs
-        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(STREAM_AUDIO_TRACKS, args.track)
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(
+            args.stream_audio_tracks, args.track)
 
         # finally call ffmpeg and view with mpv
         subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
@@ -268,6 +285,10 @@ def main():
                         default=1,
                         help="saal number to select OR custom slug",
                         required=True)
+    parser.add_argument("--num_audio", '-a', dest='num_audio', type=int,
+                        choices=range(1, max(RTMP_AUDIO_MAPPING_MAX, STREAM_AUDIO_TRACKS_MAX)+1),
+                        default=1,
+                        help="number or audio tracks")
     subparsers = parser.add_subparsers(
         help='what to play. Show command help with $command -h')
 
@@ -282,7 +303,7 @@ def main():
     parser_mix.add_argument('--loudness', '-l', action='store_true', default=False,
                             help='show loudness graph')
     parser_mix.add_argument('--track', '-t', type=int,
-                            choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
+                            choices=range(RTMP_AUDIO_MAPPING_MAX), default=0,
                             help='audio stream to play')
     parser_mix.set_defaults(func=play_mix)
 
@@ -294,7 +315,7 @@ def main():
     parser_stream.add_argument('--loudness', '-l', action='store_true', default=False,
                                help='show loudness graph')
     parser_stream.add_argument('--track', '-t', type=int,
-                               choices=range(len(STREAM_AUDIO_TRACKS)), default=0,
+                               choices=range(STREAM_AUDIO_TRACKS_MAX), default=0,
                                help='audio stream to play')
     parser_stream.set_defaults(func=play_stream)
 
@@ -303,12 +324,33 @@ def main():
     parser_rtmp.add_argument('--loudness', '-l', action='store_true', default=False,
                              help='show loudness graph')
     parser_rtmp.add_argument('--track', '-t', type=int,
-                             choices=range(len(AUDIO_STREAM_MAPPING)), default=0,
+                             choices=range(RTMP_AUDIO_MAPPING_MAX), default=0,
                              help='audio stream to play')
     parser_rtmp.set_defaults(func=play_rtmp)
 
     # parse
     args = parser.parse_args()
+
+    # Additional configuration
+    print("using/ assuming {} audio channels/ tracks in input streams".format(args.num_audio))
+    if args.num_audio == 1:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_1
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_1
+    elif args.num_audio == 2:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_2
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_2
+    elif args.num_audio == 3:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_3
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_3
+    else:
+        print("ERROR: Unknown audio track configuration, exiting")
+        sys.exit(-1)
+
+    if args.track >= args.num_audio:
+        print("ERROR: Audio track {} is out of range (use '-a' parameter to configure more tracks)".format(args.track))
+        sys.exit(-1)
+
+    # Run chosen functionality
     args.func(args)
 
 
