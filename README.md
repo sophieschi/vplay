@@ -30,3 +30,5 @@ There are three basic commands with the hall ID as common parameter:
 
 Python's help output is split.
 `./vplay -h` shows the available commands and `./vplay $command -h` shows the help for the individual command.
+
+The player volume can be changed with the "9" and "0" keys in both ffplay (normal output) and mpv (loudness monitor output).

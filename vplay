@@ -332,6 +332,14 @@ def main():
     args = parser.parse_args()
 
     # Additional configuration
+    if hasattr(args, 'type') and args.type.startswith('webm'):
+        if args.num_audio > 1:
+            print("WARNING: WebM streams only support one audio track, forcing num_audio to 1")
+            args.num_audio = 1
+        if args.track > 0:
+            print("WARNING: Forcing track selection to 0")
+            args.track = 0
+
     print("using/ assuming {} audio channels/ tracks in input streams".format(args.num_audio))
     if args.num_audio == 1:
         args.stream_audio_tracks = STREAM_AUDIO_TRACKS_1
@@ -347,7 +355,8 @@ def main():
         sys.exit(-1)
 
     if args.track >= args.num_audio:
-        print("ERROR: Audio track {} is out of range (use '-a' parameter to configure more tracks)".format(args.track))
+        print("ERROR: Audio track {} is out of range".format(args.track))
+        print("use '-a' parameter to configure more tracks")
         sys.exit(-1)
 
     # Run chosen functionality
