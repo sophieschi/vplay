@@ -37,6 +37,24 @@ STREAM_AUDIO_TRACKS_3.append(['native', "0:a:2"])  # native is always last!
 STREAM_AUDIO_TRACKS_3.append(['translated', "0:a:0"])  # translation1 is first
 STREAM_AUDIO_TRACKS_3.append(['translated_2', "0:a:1"])  # translation2 in the middle
 
+# mapping of available audio tracks (ffmpeg stream_specifier) in SRT stream
+SRT_AUDIO_TRACKS_MAX = 3  # maximum number or audio channels for SRT
+
+# A) just native audio
+SRT_AUDIO_TRACKS_1 = list()
+SRT_AUDIO_TRACKS_1.append(['native', "0:a:0"])
+
+# B) one translation
+SRT_AUDIO_TRACKS_2 = list()
+SRT_AUDIO_TRACKS_2.append(['native', "0:a:0"])
+SRT_AUDIO_TRACKS_2.append(['translated', "0:a:1"])
+
+# C) two translations
+SRT_AUDIO_TRACKS_3 = list()
+SRT_AUDIO_TRACKS_3.append(['native', "0:a:0"])
+SRT_AUDIO_TRACKS_3.append(['translated', "0:a:1"])
+SRT_AUDIO_TRACKS_3.append(['translated_2', "0:a:2"])
+
 # mapping of transcoded streams
 TRANSCODED_STREAMS = dict()
 TRANSCODED_STREAMS['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8"
@@ -229,6 +247,42 @@ def play_rtmp(args):
                         shell=True)
 
 
+def play_srt(args):
+    """
+    Play a SRT stream
+
+    Arguments:
+    - args.saal                 SRT URL (without scheme)
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting SRT stream...')
+        subprocess.call(
+            "{player} srt://{saal}".format(player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting SRT stream, playing '{}' audio...".format(
+            args.srt_audio_mapping[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(
+            args.srt_audio_mapping, args.track)
+
+        # finally call ffmpeg and view with mpv
+        input_url = "srt://{saal}".format(saal=args.saal)
+
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
+
 def play_stream(args):
     """
     Play the mix preview feed from voctomix
@@ -286,7 +340,8 @@ def main():
                         help="saal number to select OR custom slug",
                         required=True)
     parser.add_argument("--num_audio", '-a', dest='num_audio', type=int,
-                        choices=range(1, max(RTMP_AUDIO_MAPPING_MAX, STREAM_AUDIO_TRACKS_MAX)+1),
+                        choices=range(1, max(RTMP_AUDIO_MAPPING_MAX,
+                                             STREAM_AUDIO_TRACKS_MAX, SRT_AUDIO_TRACKS_MAX)+1),
                         default=1,
                         help="number or audio tracks")
     subparsers = parser.add_subparsers(
@@ -328,6 +383,15 @@ def main():
                              help='audio stream to play')
     parser_rtmp.set_defaults(func=play_rtmp)
 
+    # create the parser for the "srt" command
+    parser_srt = subparsers.add_parser('srt', help='show an SRT stream')
+    parser_srt.add_argument('--loudness', '-l', action='store_true', default=False,
+                            help='show loudness graph')
+    parser_srt.add_argument('--track', '-t', type=int,
+                            choices=range(SRT_AUDIO_TRACKS_MAX), default=0,
+                            help='audio stream to play')
+    parser_srt.set_defaults(func=play_srt)
+
     # parse
     args = parser.parse_args()
 
@@ -344,12 +408,15 @@ def main():
     if args.num_audio == 1:
         args.stream_audio_tracks = STREAM_AUDIO_TRACKS_1
         args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_1
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_1
     elif args.num_audio == 2:
         args.stream_audio_tracks = STREAM_AUDIO_TRACKS_2
         args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_2
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_2
     elif args.num_audio == 3:
         args.stream_audio_tracks = STREAM_AUDIO_TRACKS_3
         args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_3
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_3
     else:
         print("ERROR: Unknown audio track configuration, exiting")
         sys.exit(-1)

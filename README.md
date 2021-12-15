@@ -4,6 +4,7 @@ It can play:
 
 - individual outputs of voctomix
 - RTMP streams (with custom audio track mapping)
+- SRT streams (with multiple audio tracks)
 - the final transcoded streams from the VOC CDN/ streaming website.
 
 Keep in mind, that this tool uses assumptions about the VOC network and might not simply work in other situations.
@@ -25,6 +26,9 @@ There are three basic commands with the hall ID as common parameter:
         * The hall ID (`-s`) can also be an arbitrary slug in this command
         * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
     - `rtmp [-l [-t $track_no] ]`: Play RTMP stream (same audio channel config as mix)
+        * The hall ID (`-s`) must be the domain and path
+        * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
+    - `srt [-l [-t $track_no] ]`: Play SRT stream
         * The hall ID (`-s`) must be the domain and path
         * Optionally enable a loudness graph (`-l`) and select which audio track (`-t track_num`) to listen to
 
