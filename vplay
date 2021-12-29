@@ -28,14 +28,14 @@ STREAM_AUDIO_TRACKS_1.append(['native', "0:a"])  # when no translation is presen
 
 # B) one translation
 STREAM_AUDIO_TRACKS_2 = list()
-STREAM_AUDIO_TRACKS_2.append(['native', "0:a:1"])  # native is always last!
-STREAM_AUDIO_TRACKS_2.append(['translated', "0:a:0"])  # translation1 is first
+STREAM_AUDIO_TRACKS_2.append(['native', "0:a:0"])
+STREAM_AUDIO_TRACKS_2.append(['translated', "0:a:1"])
 
 # C) two translations
 STREAM_AUDIO_TRACKS_3 = list()
-STREAM_AUDIO_TRACKS_3.append(['native', "0:a:2"])  # native is always last!
-STREAM_AUDIO_TRACKS_3.append(['translated', "0:a:0"])  # translation1 is first
-STREAM_AUDIO_TRACKS_3.append(['translated_2', "0:a:1"])  # translation2 in the middle
+STREAM_AUDIO_TRACKS_3.append(['native', "0:a:0"])
+STREAM_AUDIO_TRACKS_3.append(['translated', "0:a:1"])
+STREAM_AUDIO_TRACKS_3.append(['translated_2', "0:a:2"])
 
 # mapping of available audio tracks (ffmpeg stream_specifier) in SRT stream
 SRT_AUDIO_TRACKS_MAX = 3  # maximum number or audio channels for SRT
