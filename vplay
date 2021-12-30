@@ -2,92 +2,433 @@
 
 import argparse
 import subprocess
+import sys
 
-player= "ffplay -hide_banner -loglevel warning "
+PLAYER = "ffplay -volume 40 -hide_banner -loglevel warning"
+PLAYER_MPV = "mpv --volume=50"
 
-audio_streams = list()
-audio_streams.append(['native', [0,1]]) # stereo
-audio_streams.append(['translated', [2,2]]) # mono
-audio_streams.append(['translated_2', [3,3]]) # mono
+# mapping of "surround sound" audio channels to audio streams
+RTMP_AUDIO_MAPPING_MAX = 3  # maximum number or audio channels for RMTP and MIX
 
-def play(saal, what, option, player):
-    if what == 'stream':
-        print("starting stream . . . . ")
-        if option == 1:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 0 -ast 1".format(player=player, saal=saal), shell=True)
-        elif option == 2:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_sd.m3u8 -vst 0 -ast 1".format(player=player, saal=saal), shell=True)
-        elif option == 3:
-            subprocess.call("{player} https://cdn.c3voc.de/s{saal}_native_hd.webm".format(player=player, saal=saal), shell=True)
-        elif option == 4:
-            subprocess.call("{player} https://cdn.c3voc.de/s{saal}_native_sd.webm".format(player=player, saal=saal), shell=True)
-        elif option == 5:
-            subprocess.call("{player} https://cdn.c3voc.de/hls/s{saal}_native_hd.m3u8 -vst 4 -ast 5".format(player=player, saal=saal),shell=True)
-    elif what == 'recording':
-        print('starting recording preview . . . .')
-        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:11100".format(player=player, saal=saal),shell=True)
-    elif what == 'cam':
-        print("starting cam{} preview . . . .".format(option))
-        subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1310{cam}".format(player=player, saal=saal, cam=option),shell=True)
-    elif what == 'loudness':
-        print("starting loudnessmonitor, playing '{}' audio . . . ".format(audio_streams[option][0]))
-        audio_name = ""
+RTMP_AUDIO_MAPPING_1 = list()
+RTMP_AUDIO_MAPPING_1.append(['native', (0, 1)])  # stereo
 
-        # scale original video and create ebur128 graphs
-        ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
-        for idx, s_meta in enumerate(audio_streams):
-            name = s_meta[0]
-            channels = s_meta[1]
+RTMP_AUDIO_MAPPING_2 = RTMP_AUDIO_MAPPING_1.copy()
+RTMP_AUDIO_MAPPING_2.append(['translated', (2, 2)])  # mono
 
-            # select two chanels from original 8 channel audio, render ebur128 and print audio name to output
-            ffmpeg_filter_str += "[0:a:0] pan='stereo|c0=c{ch0}|c1=c{ch1}' [a_{name}]; ".format(name=name, ch0=channels[0], ch1=channels[0])
-            ffmpeg_filter_str += "[a_{name}] ebur128=video=1:meter=16:target=-16:size=hd480 [v_{name}][a_{name}];".format(name=name)
-            ffmpeg_filter_str += "[v_{name}] drawtext=text='{name}':fontcolor=white:fontsize=24:x=(w-tw)/2:y=h-40 [vt_{name}];".format(name=name)
+RTMP_AUDIO_MAPPING_3 = RTMP_AUDIO_MAPPING_2.copy()
+RTMP_AUDIO_MAPPING_3.append(['translated_2', (3, 3)])  # mono
 
-            # discard all but the selected audio stream
-            if idx != option:
-                ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
-            else:
-                audio_name = "a_{name}".format(name=name)
+# mapping of available audio tracks (ffmpeg stream_specifier) in transcoded streams
+STREAM_AUDIO_TRACKS_MAX = 3  # maximum number or audio channels for STREAM
 
-        
-        # assemble output layout (original video + audio stream graphs)
-        ffmpeg_filter_str += "[v_video]"
-        for s_meta in audio_streams:
-            name = s_meta[0]
-            ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
-        ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(num_audio=len(audio_streams)+1)
+# A) just native audio
+STREAM_AUDIO_TRACKS_1 = list()
+STREAM_AUDIO_TRACKS_1.append(['native', "0:a"])  # when no translation is present
+
+# B) one translation
+STREAM_AUDIO_TRACKS_2 = list()
+STREAM_AUDIO_TRACKS_2.append(['native', "0:a:0"])
+STREAM_AUDIO_TRACKS_2.append(['translated', "0:a:1"])
+
+# C) two translations
+STREAM_AUDIO_TRACKS_3 = list()
+STREAM_AUDIO_TRACKS_3.append(['native', "0:a:0"])
+STREAM_AUDIO_TRACKS_3.append(['translated', "0:a:1"])
+STREAM_AUDIO_TRACKS_3.append(['translated_2', "0:a:2"])
+
+# mapping of available audio tracks (ffmpeg stream_specifier) in SRT stream
+SRT_AUDIO_TRACKS_MAX = 3  # maximum number or audio channels for SRT
+
+# A) just native audio
+SRT_AUDIO_TRACKS_1 = list()
+SRT_AUDIO_TRACKS_1.append(['native', "0:a:0"])
+
+# B) one translation
+SRT_AUDIO_TRACKS_2 = list()
+SRT_AUDIO_TRACKS_2.append(['native', "0:a:0"])
+SRT_AUDIO_TRACKS_2.append(['translated', "0:a:1"])
+
+# C) two translations
+SRT_AUDIO_TRACKS_3 = list()
+SRT_AUDIO_TRACKS_3.append(['native', "0:a:0"])
+SRT_AUDIO_TRACKS_3.append(['translated', "0:a:1"])
+SRT_AUDIO_TRACKS_3.append(['translated_2', "0:a:2"])
+
+# mapping of transcoded streams
+TRANSCODED_STREAMS = dict()
+TRANSCODED_STREAMS['hls-hd'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8"
+TRANSCODED_STREAMS['hls-sd'] = "https://cdn.c3voc.de/hls/{slug}_native_sd.m3u8"
+TRANSCODED_STREAMS['webm-hd'] = "https://cdn.c3voc.de/{slug}_native_hd.webm"
+TRANSCODED_STREAMS['webm-sd'] = "https://cdn.c3voc.de/{slug}_native_sd.webm"
+TRANSCODED_STREAMS['slides'] = "https://cdn.c3voc.de/hls/{slug}_native_hd.m3u8 -vst v:1"
+
+
+def ffmpeg_ebur128_filter_mix(audio_mapping, audio_track) -> str:
+    """
+    Build ffmpeg filter for loudness monitor
+    for inputs with multiple audio tracks in one 7.1 source
+
+    Arguments:
+    - audio_mapping         List of audio tracks/ 7.1 channel mapping
+                            with audio track name and 7.1 channel number pair (2-tuple) each
+    - audio_track           Audio track to listen to
+
+    Returns ffmpeg filter (-filter_complex) and output mapping (-map) string
+    """
+    # scale original video and create ebur128 graphs
+    audio_name = ""
+    ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
+    for idx, s_meta in enumerate(audio_mapping):
+        name = s_meta[0]
+        channels = s_meta[1]
+
+        # select two chanels from original 8 channel audio, render ebur128 and print audio name to output
+        ffmpeg_filter_str += "[0:a:0] pan='stereo|c0=c{ch0}|c1=c{ch1}' [a_{name}]; ".format(
+            name=name, ch0=channels[0], ch1=channels[0])
+        ffmpeg_filter_str += "[a_{name}] ebur128=video=1:meter=16:target=-16:size=hd480 [v_{name}][a_{name}];".format(
+            name=name)
+        ffmpeg_filter_str += "[v_{name}] drawtext=text='{name}':fontcolor=white:fontsize=24:x=(w-tw)/2:y=h-40 [vt_{name}];".format(
+            name=name)
+
+        # discard all but the selected audio stream
+        if idx != audio_track:
+            ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
+        else:
+            audio_name = "a_{name}".format(name=name)
+
+    # assemble output layout (original video + audio stream graphs)
+    ffmpeg_filter_str += "[v_video]"
+    for s_meta in audio_mapping:
+        name = s_meta[0]
+        ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
+    ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(
+        num_audio=len(audio_mapping)+1)
+
+    # assemble ffmpeg --filter_complex and output mapping string
+    ffmpeg_filter_and_map_str = """-filter_complex "{filter}" \
+-map "[combined]" -map "[{audio}]" """.format(filter=ffmpeg_filter_str, audio=audio_name)
+
+    return ffmpeg_filter_and_map_str
+
+
+def ffmpeg_ebur128_filter_stream(audio_tracks, audio_track) -> str:
+    """
+    Build ffmpeg filter for loudness monitor
+    for inputs with separate audio tracks in one container
+
+    Arguments:
+    - audio_tracks          List of stream audio tracks
+                            with audio track name and ffmpeg stream specifier each
+    - audio_track           Audio track to listen to
+
+    Returns ffmpeg filter (-filter_complex) and output mapping (-map) string
+    """
+    # scale original video and create ebur128 graphs
+    audio_name = ""
+    ffmpeg_filter_str = "[0:v:0] scale=hd480 [v_video];"
+    for idx, s_meta in enumerate(audio_tracks):
+        name = s_meta[0]
+        stream_specifier = s_meta[1]
+
+        # select an audio track, render ebur128 and print audio name to output
+        ffmpeg_filter_str += "[{s_id}] ebur128=video=1:meter=16:target=-16:size=hd480 [v_{name}][a_{name}];".format(
+            s_id=stream_specifier, name=name)
+        ffmpeg_filter_str += "[v_{name}] drawtext=text='{name}':fontcolor=white:fontsize=24:x=(w-tw)/2:y=h-40 [vt_{name}];".format(
+            name=name)
+
+        # discard all but the selected audio stream
+        if idx != audio_track:
+            ffmpeg_filter_str += "[a_{name}] anullsink;".format(name=name)
+        else:
+            audio_name = "a_{name}".format(name=name)
+
+    # assemble output layout (original video + audio stream graphs)
+    ffmpeg_filter_str += "[v_video]"
+    for s_meta in audio_tracks:
+        name = s_meta[0]
+        ffmpeg_filter_str += "[vt_{name}] ".format(name=name)
+    ffmpeg_filter_str += "vstack=inputs={num_audio:d} [combined]".format(
+        num_audio=len(audio_tracks)+1)
+
+    # assemble ffmpeg --filter_complex and output mapping string
+    ffmpeg_filter_and_map_str = """-filter_complex "{filter}" \
+-map "[combined]" -map "[{audio}]" """.format(filter=ffmpeg_filter_str, audio=audio_name)
+
+    return ffmpeg_filter_and_map_str
+
+
+def play_cam(args):
+    """
+    Play the camera preview feed from voctomix
+
+    Arguments:
+    - args.saal             Encoder number
+    - args.cam_no           Camera number
+    """
+
+    print("starting cam{} preview...".format(args.cam_no))
+    subprocess.call("{player} tcp://encoder{saal}.lan.c3voc.de:1310{cam}".format(
+        player=PLAYER, saal=args.saal, cam=args.cam_no), shell=True)
+
+
+def play_mix(args):
+    """
+    Play the mix preview feed from voctomix
+
+    Arguments:
+    - args.saal                 Encoder number
+    - args.rtmp_audio_mapping   List of audio tracks/ 7.1 channel mapping
+                                with audio track name and 7.1 channel number pair (2-tuple) each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting mix preview...')
+        subprocess.call(
+            "{player} tcp://encoder{saal}.lan.c3voc.de:11100".format(
+                player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting mix preview, playing '{}' audio...".format(
+            args.rtmp_audio_mapping[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(args.rtmp_audio_mapping, args.track)
 
         # finally call ffmpeg and view with mpv
-        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i tcp://encoder{saal}.lan.c3voc.de:11100 \
--filter_complex "{filter}" \
--map "[combined]" -map "[{audio}]" \
--c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 -f matroska - | mpv -""".format(saal=saal, filter=ffmpeg_filter_str, audio=audio_name), shell=True)
+        input_url = "tcp://encoder{saal}.lan.c3voc.de:11100".format(saal=args.saal)
+
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
+
+def play_rtmp(args):
+    """
+    Play a RTMP stream
+
+    Arguments:
+    - args.saal                 RTMP URL (without scheme)
+    - args.rtmp_audio_mapping   List of audio tracks/ 7.1 channel mapping
+                                with audio track name and 7.1 channel number pair (2-tuple) each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting RTMP stream...')
+        subprocess.call(
+            "{player} rtmp://{saal}".format(player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting RTMP stream, playing '{}' audio...".format(
+            args.rtmp_audio_mapping[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_mix(args.rtmp_audio_mapping, args.track)
+
+        # finally call ffmpeg and view with mpv
+        input_url = "rtmp://{saal}".format(saal=args.saal)
+
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
+
+def play_srt(args):
+    """
+    Play a SRT stream
+
+    Arguments:
+    - args.saal                 SRT URL (without scheme)
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
+    """
+
+    if not args.loudness:
+        print('starting SRT stream...')
+        subprocess.call(
+            "{player} srt://{saal}".format(player=PLAYER, saal=args.saal),
+            shell=True)
+
+    else:
+        print("starting SRT stream, playing '{}' audio...".format(
+            args.srt_audio_mapping[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(
+            args.srt_audio_mapping, args.track)
+
+        # finally call ffmpeg and view with mpv
+        input_url = "srt://{saal}".format(saal=args.saal)
+
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=input_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
+
+def play_stream(args):
+    """
+    Play the mix preview feed from voctomix
+
+    Arguments:
+    - args.saal                 Encoder number or custom slug
+    - args.stream_audio_tracks  List of stream audio tracks
+                                with audio track name and ffmpeg stream specifier each
+    - args.loudness             Enable loudness monitor
+        - args.track            Audio track to play
+    """
+
+    # convert saal number or custom slug
+    streamslug = ""
+    if args.saal.isnumeric():
+        streamslug = "s{}".format(args.saal)
+    else:
+        streamslug = args.saal
+
+    stream_url_options = TRANSCODED_STREAMS[args.type].format(slug=streamslug)
+    stream_url = stream_url_options.split()[0]  # url without options (until first whitespace)
+
+    if not args.loudness:
+        # play stream
+        print("starting '{}' stream of {}, playing '{}' audio...".format(
+            args.type, streamslug, args.stream_audio_tracks[args.track][0]))
+        subprocess.call("{player} {url} -ast {audio_track}".format(player=PLAYER,
+                                                                   url=stream_url_options,
+                                                                   audio_track=args.stream_audio_tracks[args.track][1][2:]),
+                        shell=True)
+
+    else:
+        print("starting '{}' stream of {}, playing '{}' audio...".format(
+            args.type, streamslug, args.stream_audio_tracks[args.track][0]))
+
+        # get ffmpeg filter for video + loudness graphs
+        ffmpeg_filter_and_map_str = ffmpeg_ebur128_filter_stream(
+            args.stream_audio_tracks, args.track)
+
+        # finally call ffmpeg and view with mpv
+        subprocess.call("""ffmpeg -y -hide_banner -loglevel warning -re -i {input_url} \
+{filter_and_map} \
+-c:v rawvideo -c:a pcm_s16le -pix_fmt yuv420p -r 25 \
+-f matroska - | {player_mpv} -""".format(player_mpv=PLAYER_MPV,
+                                         input_url=stream_url,
+                                         filter_and_map=ffmpeg_filter_and_map_str),
+                        shell=True)
+
 
 def main():
+    # top level arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--saal", '-s', 
-            dest='saal',
-            default=1, 
-            type=int, 
-            help="saal to select", 
-            required=True)
-    parser.add_argument("--type", '-t', 
-            dest='what',
-            default='cam', 
-            choices=['cam', 'recording', 'stream', 'loudness'], 
-            help="what to play", 
-            required=True)
-    parser.add_argument("--option", '-o', 
-            dest='option',
-            default=1, 
-            type=int,
-            choices=range(6), 
-            help="which cam (1 to 5) or stream (1=hls hd, 2=hls sd, 3=webm hd, 4=webm sd, 5 slides) or audio source (0=native, 1=translated 1, 2=translated 2) to play")
+    parser.add_argument("--saal", '-s', dest='saal',
+                        default=1,
+                        help="saal number to select OR custom slug",
+                        required=True)
+    parser.add_argument("--num_audio", '-a', dest='num_audio', type=int,
+                        choices=range(1, max(RTMP_AUDIO_MAPPING_MAX,
+                                             STREAM_AUDIO_TRACKS_MAX, SRT_AUDIO_TRACKS_MAX)+1),
+                        default=1,
+                        help="number or audio tracks")
+    subparsers = parser.add_subparsers(
+        help='what to play. Show command help with $command -h')
 
-    flags = parser.parse_args()
+    # create the parser for the "cam" command
+    parser_cam = subparsers.add_parser('cam', help='show a camera feed')
+    parser_cam.add_argument('cam_no', type=int,
+                            help='camera number')
+    parser_cam.set_defaults(func=play_cam)
 
-    play(flags.saal, flags.what, flags.option, player)
+    # create the parser for the "mix" command
+    parser_mix = subparsers.add_parser('mix', help='show the mix preview')
+    parser_mix.add_argument('--loudness', '-l', action='store_true', default=False,
+                            help='show loudness graph')
+    parser_mix.add_argument('--track', '-t', type=int,
+                            choices=range(RTMP_AUDIO_MAPPING_MAX), default=0,
+                            help='audio stream to play')
+    parser_mix.set_defaults(func=play_mix)
+
+    # create the parser for the "stream" command
+    transcoding_types = TRANSCODED_STREAMS.keys()
+    parser_stream = subparsers.add_parser('stream', help='show a selected stream transcoding')
+    parser_stream.add_argument('type', choices=transcoding_types,
+                               help='stream type')
+    parser_stream.add_argument('--loudness', '-l', action='store_true', default=False,
+                               help='show loudness graph')
+    parser_stream.add_argument('--track', '-t', type=int,
+                               choices=range(STREAM_AUDIO_TRACKS_MAX), default=0,
+                               help='audio stream to play')
+    parser_stream.set_defaults(func=play_stream)
+
+    # create the parser for the "rtmp" command
+    parser_rtmp = subparsers.add_parser('rtmp', help='show an RTMP stream')
+    parser_rtmp.add_argument('--loudness', '-l', action='store_true', default=False,
+                             help='show loudness graph')
+    parser_rtmp.add_argument('--track', '-t', type=int,
+                             choices=range(RTMP_AUDIO_MAPPING_MAX), default=0,
+                             help='audio stream to play')
+    parser_rtmp.set_defaults(func=play_rtmp)
+
+    # create the parser for the "srt" command
+    parser_srt = subparsers.add_parser('srt', help='show an SRT stream')
+    parser_srt.add_argument('--loudness', '-l', action='store_true', default=False,
+                            help='show loudness graph')
+    parser_srt.add_argument('--track', '-t', type=int,
+                            choices=range(SRT_AUDIO_TRACKS_MAX), default=0,
+                            help='audio stream to play')
+    parser_srt.set_defaults(func=play_srt)
+
+    # parse
+    args = parser.parse_args()
+
+    # Additional configuration
+    if hasattr(args, 'type') and args.type.startswith('webm'):
+        if args.num_audio > 1:
+            print("WARNING: WebM streams only support one audio track, forcing num_audio to 1")
+            args.num_audio = 1
+        if args.track > 0:
+            print("WARNING: Forcing track selection to 0")
+            args.track = 0
+
+    print("using/ assuming {} audio channels/ tracks in input streams".format(args.num_audio))
+    if args.num_audio == 1:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_1
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_1
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_1
+    elif args.num_audio == 2:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_2
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_2
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_2
+    elif args.num_audio == 3:
+        args.stream_audio_tracks = STREAM_AUDIO_TRACKS_3
+        args.rtmp_audio_mapping = RTMP_AUDIO_MAPPING_3
+        args.srt_audio_mapping = SRT_AUDIO_TRACKS_3
+    else:
+        print("ERROR: Unknown audio track configuration, exiting")
+        sys.exit(-1)
+
+    if args.track >= args.num_audio:
+        print("ERROR: Audio track {} is out of range".format(args.track))
+        print("use '-a' parameter to configure more tracks")
+        sys.exit(-1)
+
+    # Run chosen functionality
+    args.func(args)
+
 
 if __name__ == "__main__":
     main()
