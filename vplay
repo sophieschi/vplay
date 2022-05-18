@@ -421,10 +421,11 @@ def main():
         print("ERROR: Unknown audio track configuration, exiting")
         sys.exit(-1)
 
-    if args.track >= args.num_audio:
-        print("ERROR: Audio track {} is out of range".format(args.track))
-        print("use '-a' parameter to configure more tracks")
-        sys.exit(-1)
+    if hasattr(args, 'type') and not args.type.startswith('cam'):
+        if args.track >= args.num_audio:
+            print("ERROR: Audio track {} is out of range".format(args.track))
+            print("use '-a' parameter to configure more tracks")
+            sys.exit(-1)
 
     # Run chosen functionality
     args.func(args)
