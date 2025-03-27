@@ -36,3 +36,19 @@ Python's help output is split.
 `./vplay -h` shows the available commands and `./vplay $command -h` shows the help for the individual command.
 
 The player volume can be changed with the "9" and "0" keys in both ffplay (normal output) and mpv (loudness monitor output).
+
+## Examples
+Play SRT stream with 3 audio tracks, show EBUR graphs and listen to native audio:
+```
+vplay -a 3 -s "ingest.c3voc.de:1337?streamid=play/teststream" srt -l -t 0
+```
+
+Play transcoded stream with 3 audio tracks, show EBUR graphs and listen to translation 1:
+```
+vplay -a 3 -s teststream stream hls-hd -l -t 1
+```
+
+Play RTMP stream with simple stereo audio channel:
+```
+vplay -s ingest2.c3voc.de/relay/test rtmp
+```
